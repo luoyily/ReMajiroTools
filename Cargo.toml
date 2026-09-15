@@ -1,0 +1,28 @@
+[package]
+name = "remajiro-tools"
+version = "0.1.0"
+edition = "2021"
+description = "Developer tools for ReMajiro: Majiro archive extraction, lossless script IR conversion, and image conversion"
+
+[lib]
+name = "tools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mjo-arc"
+path = "src/bin/mjo-arc.rs"
+
+[[bin]]
+name = "mjo-ir"
+path = "src/bin/mjo-ir.rs"
+
+[[bin]]
+name = "rct2png"
+path = "src/bin/rct2png.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+png = "0.17"
+serde_json = "1"
+formats = { git = "https://github.com/luoyily/ReMajiro", tag = "v0.1.0" }
+vm = { git = "https://github.com/luoyily/ReMajiro", tag = "v0.1.0" }
