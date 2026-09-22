@@ -33,7 +33,9 @@ mjo-arc -i data.arc -o ./out -v   # verbose extraction
 Converts Majiro `.mjo` scripts to a readable text IR and back. Its main purpose is producing translation annotations: every `TEXT_RENDER` line in the IR can carry an `@tr from -> to` tag, and the runtime applies these tags at startup without touching the original script bytes.
 
 ```sh
-mjo-ir export -i start.mjo -o start.ir   # decode .mjo -> readable IR text
+mjo-ir export -i start.mjo -o start.ir       # decode .mjo -> readable IR text (v1)
+mjo-ir export --v2 -i start.mjo -o start.ir  # symbolic export (IRv2, experimental)
+mjo-ir check -i start.ir                     # parse + assemble + control-flow lint
 ```
 
 To translate a script, add an `@tr` line under the matching `TEXT_RENDER` instruction (by hand or scripted), then ship the `.ir` file in the patch (see below).
@@ -41,6 +43,7 @@ To translate a script, add an `@tr` line under the matching `TEXT_RENDER` instru
 Two more subcommands exist mostly for development and testing: `import` re-assembles edited IR back into a `.mjo`, and `localize` bulk-attaches translations from an offset-keyed JSON catalog as `@tr` tags:
 
 ```sh
+mjo-ir import -i start.ir -o start.mjo
 mjo-ir localize -i start.mjo -c text/start.json -o start.ir
 ```
 
@@ -49,6 +52,34 @@ mjo-ir localize -i start.mjo -c text/start.json -o start.ir
 1. `mjo-ir export -i start.mjo -o start.ir` to get readable IR.
 2. Add an `@tr from -> to` line under each `TEXT_RENDER` you want to translate.
 3. Drop the finished `<script>.ir` into the patch tree under `text/`, named after the script it patches. The engine mounts it at startup and applies the `@tr` translations over the original script.
+
+### IR versions
+
+The first line of every `.ir` file declares its format version (`# majiro-ir N`), and the version decides what edits are legal:
+
+- **IRv1** (default) — the translation channel. The file must assemble back to archive-identical bytes; only `@tr` annotations may be edited. The engine enforces this at load: a v1 file that changed code bytes is rejected loudly and the archive script is used instead. Original saves stay compatible.
+- **IRv2 — experimental** — the modification channel. `export --v2` renders control flow symbolically so scripts can be structurally edited:
+  - jumps, `SYS_18` jump-table cases, and `CALL` cached offsets become `:label` references (auto-named after the original target offset) or `@0x…` absolute escapes;
+  - inserting or deleting instructions re-computes every displacement at assembly, so relocated code still jumps where you meant it to;
+  - bare numeric displacements are rejected in v2 — intent lives in the notation (`:label` tracks edits, `@0x…` pins an absolute offset);
+  - `utf8 "…"` string payloads carry raw UTF-8 bytes for scripts whose text is sliced or compared inside the bytecode (v1 rejects them: translations belong in `@tr` there).
+
+  ```text
+  # majiro-ir 2
+  @magic x1
+  @main :e0
+  @entry 0xF8FADC5C :e0
+  0x00020F: 0x080F 0x4C7C54AB 0 5 ; CALL_GLOBAL
+  0x00063B: 0x082D :L000607 ; JUMP_IF
+  @label L000607:
+  0x000607: 0x0840 utf8 "「生日快乐，哥哥」" ; TEXT_LINE
+  ```
+
+  IRv2 targets deeper script rewrites — for example, special presentations beyond ordinary dialogue (such as *OwaruSekai*'s prologue chat). Inserting or deleting instructions shifts code addresses; the assembler recomputes them automatically, but this is experimental and not yet thoroughly tested. Beyond addressing, in-script string operations written for Shift-JIS byte widths (splitting, measuring) break once payloads become UTF-8, and other latent issues may surface — affected scripts need case-by-case adjustment.
+
+  The syntax and behavior are still evolving, and scripts modified under v2 are not save-compatible with the original engine. `mjo-ir check` validates a file end to end: it assembles (catching dangling labels and non-Shift-JIS `text` payloads), verifies that every `@0x…` target lands on an instruction boundary, and prints the modification inventory (version, `@tr` count, escapes, `utf8` payloads).
+
+IRv2 requires ReMajiro v0.1.1 or newer; the v1 tooling works against v0.1.0 as-is.
 
 ## rct2png — image converter
 
@@ -88,6 +119,11 @@ id = "my-translation"           # optional; defaults to the patch folder name
 locale = "zh-Hans"              # optional
 fonts = ["fonts/my-font.ttf"]   # optional, patch-relative paths
 
+[save_compatibility]
+bidirectional = true            # IRv1 only: true = saves store/show the
+                                # original text; false = new saves may store/
+                                # show the translated text (UTF-8)
+
 [presentation]
 scale = 2                       # integer presentation scale
 output_width = 2560             # optional output size override
@@ -107,6 +143,8 @@ Development/testing helper: the patch tree can alternatively hold offset-keyed J
 ```
 
 `code_crc32` is an optional guard (number or hex string) verifying the catalog against the exact script build. `source` is optional context metadata; only `text` is applied.
+
+`[save_compatibility]` applies to IRv1 scripts only: `bidirectional = true` (default) saves and shows the original text, interop with the vanilla engine; `false` lets new saves store and show the translated text (UTF-8, not vanilla-readable). IRv2-modified scripts are not vanilla-compatible either way — pages without an original-Shift-JIS first line automatically fall back to the UTF-8 mirror, and the engine logs a warning when they meet `bidirectional = true`.
 
 Image overrides are plain PNGs under `images/`, named after the logical resource name of the image they replace — no raw or auxiliary format is needed, transparency included (the alpha channel is used as-is). They are layered on top of the original data at the patch's integer presentation scale, so an upscaled set only needs to cover the images worth replacing.
 
