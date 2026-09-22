@@ -1,7 +1,7 @@
 # ReMajiroTools
 ReMajiro's extension tools
 
-Developer tools for [ReMajiro](https://github.com/luoyily/ReMajiro), a Rust implementation of the Majiro Engine. The binaries consume the `formats` and `vm` crates directly from the ReMajiro repository (pinned to tag `v0.1.0`), so the repo builds entirely on its own:
+Developer tools for [ReMajiro](https://github.com/luoyily/ReMajiro), a Rust implementation of the Majiro Engine. The binaries consume the `formats` and `vm` crates directly from the ReMajiro repository (pinned to tag `v0.1.1`), so the repo builds entirely on its own:
 
 ```sh
 cargo build --release
